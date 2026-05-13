@@ -24,6 +24,10 @@ Review scope: migrate the Super-Neg `sbd_accelerator` Rust/PyO3 prototype into `
 
    Added architecture, API, build, example, performance, and development sections.
 
+6. Raw hashes were useful for machines but not enough for humans.
+
+   Added high-level summary APIs that return readable top patterns, dominant share, and a plain `collapse_pressure` field while keeping the original fast tuple API intact.
+
 ## Residual Risks
 
 1. The benchmark claim is workload-specific.
@@ -32,7 +36,7 @@ Review scope: migrate the Super-Neg `sbd_accelerator` Rust/PyO3 prototype into `
 
 2. Dominant species hash is stable but opaque.
 
-   This is fine for fast gating, but user-facing diagnostics may eventually need a reverse map from hash to POS-window string.
+   The summary APIs now expose readable top patterns. Hashes are still best treated as fast diagnostic identifiers, not permanent corpus IDs.
 
 3. Python package metadata is intentionally minimal.
 

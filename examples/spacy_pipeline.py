@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from pprint import pprint
+
 import spacy
-from warp_pos_spacy import accumulate_and_score
+from warp_pos_spacy import score_anchored
 
 NEG_TRIGGERS = {
     "not",
@@ -64,16 +66,11 @@ def main() -> None:
     nlp = spacy.load("en_core_web_sm")
 
     pos_sequences, anchor_indices, skipped = prepare_spacy_inputs(sentences, nlp)
-    simpson_d, shannon_h, dominant_hash, dominant_count = accumulate_and_score(
-        pos_sequences, anchor_indices
-    )
+    summary = score_anchored(pos_sequences, anchor_indices, top_n=5)
 
     print(f"Scored sentences:  {len(pos_sequences)}")
     print(f"Skipped:           {skipped}")
-    print(f"Simpson dominance: {simpson_d:.6f}")
-    print(f"Shannon entropy:   {shannon_h:.6f}")
-    print(f"Dominant hash:     {dominant_hash}")
-    print(f"Dominant count:    {dominant_count}")
+    pprint(summary)
 
 
 if __name__ == "__main__":

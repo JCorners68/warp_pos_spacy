@@ -1,14 +1,16 @@
 # warp_pos_spacy
 
-`warp_pos_spacy` is what happened when a speed nerd met spaCy and asked: what if we kept spaCy's linguistic judgment, but moved the repetitive scoring math into Rust?
+A tiny structural diversity meter for generated text.
 
-It does not replace spaCy as a linguistic parser. spaCy still does the high-fidelity POS tagging and anchor detection. This crate takes the POS arrays and runs the hot scoring loop in Rust with Rayon.
+A speed nerd met spaCy and said... what if we did it this way?
 
-The original Super-Neg workload used this for Syntactic Biome Diversity (SBD): detect whether an LLM generation loop has collapsed into the same grammatical template over and over.
+`warp_pos_spacy` keeps spaCy where it is good: tokenization, POS tagging, dependency parsing, and linguistic judgment. It moves the boring hot loop into Rust: hash small POS windows, count repeated shapes, and report whether a generated corpus is drifting into the same hidden template over and over.
 
-## Why
+It is small on purpose. It is not a parser, not an embedding model, and not a synthetic-data platform. It is a pressure gauge for template collapse.
 
-When generating hard negation data, lexical variety is not enough. A model can produce thousands of examples that look different at the word level while quietly reusing the same syntactic move:
+## Why This Exists
+
+Generated text often looks varied while repeating the same move underneath:
 
 ```text
 PRON AUX PART VERB DET NOUN
@@ -16,73 +18,43 @@ PRON AUX PART VERB DET NOUN
 PRON AUX PART VERB DET NOUN
 ```
 
-That is template monoculture. It trains models to memorize shortcuts instead of learning the harder semantic boundary.
+For hard negation data, that repetition made examples weaker. A model could learn the template instead of learning the semantic hinge. The same failure shows up in other places too:
 
-SBD treats the POS window around a negation anchor as a "species" and tracks the species distribution with ecological diversity metrics:
+- synthetic training data that quietly reuses one sentence shape
+- eval questions that all test the same trick
+- RAG hard negatives that differ lexically but not structurally
+- prompt batches where the model falls into a phrasing groove
+- agent traces that repeat the same action pattern
 
-- Simpson's dominance, where high values mean one template is taking over.
-- Shannon entropy, where higher values mean a broader syntactic spread.
+`warp_pos_spacy` gives you a cheap way to notice.
 
-## Performance
+## What It Measures
 
-On the Super-Neg SBD scoring job, the Rust/PyO3/Rayon path was roughly **1,500x faster** than the Python loop used for the same POS-window math. The working benchmark note was about **3.5 minutes** for Python loops versus about **6.6 ms** for the Rust path.
+The crate treats a fixed POS window `[-2, +3]` around an anchor as a structural "species." It then scores the species distribution.
 
-That claim is intentionally scoped:
+The high-level APIs return:
 
-- spaCy still performs tokenization, tagging, and dependency parsing.
-- `warp_pos_spacy` accelerates the POS-window hashing, accumulation, and diversity scoring.
-- End-to-end throughput still depends on the spaCy model, CPU/GPU setup, text length, and batch size.
+- `total_windows`: number of windows scored
+- `unique_patterns`: number of distinct structural patterns
+- `simpson_d`: Simpson dominance, where higher means one pattern is taking over
+- `shannon_h`: Shannon entropy, where higher means broader variety
+- `dominant_share`: share held by the most common pattern
+- `collapse_pressure`: currently the same as Simpson dominance, exposed under a plain name
+- `top_patterns`: readable pattern/count/share diagnostics
 
-## API
+The older tuple API remains available for callers that only need raw speed and hashes.
 
-```python
-from warp_pos_spacy import accumulate_and_score, hash_window
-
-species = hash_window(["PRON", "AUX", "PART", "VERB", "DET", "NOUN"], 2)
-
-simpson_d, shannon_h, dominant_hash, dominant_count = accumulate_and_score(
-    [
-        ["PRON", "AUX", "PART", "VERB", "DET", "NOUN"],
-        ["PRON", "AUX", "PART", "VERB", "DET", "NOUN"],
-        ["NOUN", "AUX", "PART", "VERB", "ADJ", "NOUN"],
-    ],
-    [2, 2, 2],
-)
-```
-
-`hash_window(pos_sequence, anchor_idx) -> int`
-
-Returns a deterministic species hash for the POS window `[-2, +3]` around `anchor_idx`. Out-of-range window positions are padded. Empty POS arrays or out-of-range anchors raise `ValueError`.
-
-`accumulate_and_score(pos_sequences, anchor_indices) -> tuple[float, float, int, int]`
-
-Returns:
-
-- `simpson_d`: Simpson's dominance index, `sum(p_i^2)`.
-- `shannon_h`: Shannon entropy, `-sum(p_i * ln(p_i))`.
-- `dominant_hash`: species hash for the most common POS window.
-- `dominant_count`: count for the dominant species.
-
-## Build
-
-Install Rust and Python build tooling, then:
+## Install For Development
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install maturin
 maturin develop --release
+python examples/pretagged.py
 ```
 
-For the spaCy example:
-
-```bash
-pip install spacy
-python -m spacy download en_core_web_sm
-python examples/spacy_pipeline.py
-```
-
-To build and install a wheel without relying on an activated environment:
+To build a wheel without activating the environment:
 
 ```bash
 python -m maturin build --release
@@ -90,7 +62,86 @@ pip install target/wheels/*.whl
 python examples/pretagged.py
 ```
 
-If you have a spaCy pipeline that can use GPU, enable it before loading the model:
+## Quick Start
+
+Use `score_anchored` when you already know the important token position: a negation marker, answer span, entity, citation, number, verb, or any domain-specific hinge.
+
+```python
+from warp_pos_spacy import score_anchored
+
+pos_sequences = [
+    ["PRON", "AUX", "PART", "VERB", "DET", "NOUN"],
+    ["PRON", "AUX", "PART", "VERB", "DET", "NOUN"],
+    ["NOUN", "AUX", "PART", "VERB", "ADJ", "NOUN"],
+]
+anchor_indices = [2, 2, 2]
+
+summary = score_anchored(pos_sequences, anchor_indices, top_n=3)
+print(summary["dominant_share"])
+print(summary["top_patterns"][0])
+```
+
+Example output shape:
+
+```python
+{
+    "total_windows": 3,
+    "unique_patterns": 2,
+    "simpson_d": 0.5555555555555556,
+    "shannon_h": 0.6365141682948128,
+    "dominant_hash": 15450595141421276804,
+    "dominant_count": 2,
+    "dominant_share": 0.6666666666666666,
+    "collapse_pressure": 0.5555555555555556,
+    "top_patterns": [
+        {
+            "hash": 15450595141421276804,
+            "pattern": "PRON AUX PART VERB DET NOUN",
+            "count": 2,
+            "share": 0.6666666666666666,
+        }
+    ],
+}
+```
+
+Use `score_all_windows` when you do not have anchors and just want a broad structural scan.
+
+```python
+from warp_pos_spacy import score_all_windows
+
+summary = score_all_windows(pos_sequences, top_n=5)
+for pattern in summary["top_patterns"]:
+    print(pattern["count"], pattern["pattern"])
+```
+
+## With spaCy
+
+spaCy should still do the linguistic work. This package expects POS tags and optional anchor positions.
+
+```python
+import spacy
+from warp_pos_spacy import score_anchored
+
+nlp = spacy.load("en_core_web_sm")
+texts = [
+    "The system does not accept stale credentials.",
+    "The policy cannot survive that exception.",
+]
+
+pos_sequences = []
+anchor_indices = []
+
+for doc in nlp.pipe(texts):
+    for i, token in enumerate(doc):
+        if token.dep_ == "neg":
+            pos_sequences.append([token.pos_ for token in doc])
+            anchor_indices.append(i)
+            break
+
+print(score_anchored(pos_sequences, anchor_indices))
+```
+
+If your spaCy pipeline can use GPU, enable it before loading the model:
 
 ```python
 import spacy
@@ -99,16 +150,55 @@ spacy.prefer_gpu()
 nlp = spacy.load("en_core_web_sm")
 ```
 
+## API
+
+`hash_window(pos_sequence, anchor_idx) -> int`
+
+Returns a deterministic species hash for one POS window. Empty POS arrays or out-of-range anchors raise `ValueError`.
+
+`accumulate_and_score(pos_sequences, anchor_indices) -> tuple[float, float, int, int]`
+
+Legacy fast path. Returns `(simpson_d, shannon_h, dominant_hash, dominant_count)`.
+
+`score_anchored(pos_sequences, anchor_indices, top_n=8) -> dict`
+
+Scores one supplied anchor per POS sequence and returns readable diagnostics.
+
+`score_all_windows(pos_sequences, top_n=8) -> dict`
+
+Scores every token position in every POS sequence. This is the simplest mode for broad corpus QA.
+
+## Performance
+
+On the original Super-Neg SBD scoring job, the Rust/PyO3/Rayon path was roughly **1,500x faster** than the Python loop used for the same POS-window math. The working benchmark note was about **3.5 minutes** for Python loops versus about **6.6 ms** for the Rust path.
+
+That claim is intentionally scoped:
+
+- spaCy still performs tokenization, tagging, and dependency parsing.
+- `warp_pos_spacy` accelerates POS-window hashing, accumulation, and diversity scoring.
+- End-to-end throughput still depends on the spaCy model, CPU/GPU setup, text length, and batch size.
+
+## Design Notes
+
+This crate stays boring:
+
+- fixed six-token POS windows
+- deterministic hash seeds
+- no model downloads
+- no NLP opinions beyond the features you pass in
+- no hidden state
+
+You can pass POS tags, POS plus dependency labels, entity tags, morphology labels, or any other short feature strings. The Rust side only sees windows of strings.
+
+Hash collisions are possible in theory, so use this as a fast diagnostic and gating signal rather than a permanent identifier system.
+
 ## Development
 
 ```bash
 cargo fmt -- --check
 cargo clippy --all-targets -- -D warnings
 cargo test
+python -m maturin build --release
 ```
 
-## Design Notes
-
-The crate is deliberately narrow. It expects pre-tagged POS sequences and explicit anchors because that keeps the Rust side deterministic, small, and easy to audit. This also avoids pretending Rust is doing the NLP work. spaCy is the parser. Rust is the fast math lane.
-
-The hash seed is fixed so a given POS window maps to the same species hash across runs. That makes SBD feedback stable enough to feed back into prompt penalties and regression tests.
+GitHub Actions runs Rust formatting, clippy, unit tests, a Python wheel build, wheel install, and the pre-tagged example.

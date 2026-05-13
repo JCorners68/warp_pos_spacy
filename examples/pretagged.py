@@ -1,4 +1,6 @@
-from warp_pos_spacy import accumulate_and_score, hash_window
+from pprint import pprint
+
+from warp_pos_spacy import accumulate_and_score, hash_window, score_all_windows, score_anchored
 
 
 def main() -> None:
@@ -21,6 +23,12 @@ def main() -> None:
     print(f"Shannon entropy:   {shannon_h:.6f}")
     print(f"Dominant hash:     {dominant_hash}")
     print(f"Dominant count:    {dominant_count}")
+
+    print("\nAnchored summary:")
+    pprint(score_anchored(pos_sequences, anchor_indices, top_n=3))
+
+    print("\nAll-window summary:")
+    pprint(score_all_windows(pos_sequences, top_n=3))
 
 
 if __name__ == "__main__":
