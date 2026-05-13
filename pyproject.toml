@@ -1,0 +1,21 @@
+[build-system]
+requires = ["maturin>=1.6,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "warp-pos-spacy"
+version = "0.1.0"
+description = "PyO3/Rayon accelerator for spaCy POS-window diversity scoring."
+requires-python = ">=3.9"
+readme = "README.md"
+license = { text = "MIT OR Apache-2.0" }
+authors = [{ name = "Jonathan Corners" }]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Topic :: Text Processing :: Linguistic",
+]
+
+[tool.maturin]
+bindings = "pyo3"
+module-name = "warp_pos_spacy"

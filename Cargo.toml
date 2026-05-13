@@ -1,0 +1,23 @@
+[package]
+name = "warp_pos_spacy"
+version = "0.1.0"
+edition = "2021"
+description = "PyO3/Rayon accelerator for spaCy POS-window diversity scoring."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/JCorners68/warp_pos_spacy"
+readme = "README.md"
+keywords = ["spacy", "pos", "pyo3", "nlp", "diversity"]
+categories = ["science", "text-processing"]
+
+[lib]
+name = "warp_pos_spacy"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ahash = "0.8"
+pyo3 = { version = "0.22", features = ["extension-module"] }
+rayon = "1.10"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

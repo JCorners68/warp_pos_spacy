@@ -1,0 +1,9 @@
+/target/
+/.venv/
+/.pytest_cache/
+/*.so
+/*.pyd
+/*.egg-info/
+__pycache__/
+dist/
+wheelhouse/
